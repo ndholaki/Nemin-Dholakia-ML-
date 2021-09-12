@@ -1,0 +1,69 @@
+---
+title: "ml assignment 1"
+author: "nemin dholakia"
+date: "9/10/2021"
+output: html_document
+ df print:paged
+ 
+ 
+```{r setup , include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Q1: Data source
+Our dataset **Overwise statistics without superover** has been extracted from **KAGGLE** , is a collection of database and datasets used by Machine Learning Community for the analysis of Machine Learning algorithms.
+
+###Q2: Importing Overwise statistics without superover dataset to R Studio
+
+```{r }
+setwd("C:/Users/User/Downloads/archive (1)")
+OS_WS <- read.csv("Overwise statistics without super over.csv")
+head(OS_WS)
+
+```
+###Q3: Descriptive analysis of OWSW Dataset
+Inspecting dataset
+```{r message=FALSE }
+summary(OS_WS)
+
+```
+**Arithmetic Mean: ** AM of a set of observation is defined as their sum divided number of observations
+
+```{r }
+#Average runs 
+mean(OS_WS$runs)
+```
+**Median:** is the middle value of the observation.
+
+```{r }
+#Median of wickets
+median(sort(OS_WS$wickets))
+```
+**Mode :** refers to the value which occurs to the maximum frequency.
+
+```{r }
+sort(table(OS_WS$winner),decreasing=TRUE)
+```
+
+###Q4: Transformation
+
+```{r }
+#Applying log transformation on Wicket column
+run <- log10(OS_WS$runs)
+##displaying first 10 values
+run[1:10]
+
+```
+###Q5:Visualisation
+**Histogram Plot**
+
+```{r message=FALSE, warning= FALSE }
+library(ggplot2)
+ggplot(OS_WS,aes(x= wickets))+geom_histogram()+ggtitle('Histogram')
+
+```
+**Scatter Plot**
+
+```{r }
+ggplot(OS_WS, aes(x= runs, y=wickets))+geom_point()+ggtitle('Scatter Plot')
+```
