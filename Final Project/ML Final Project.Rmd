@@ -1,0 +1,179 @@
+---
+title: "ML Final Project"
+author: "Nemin Dholakia"
+date: "12/8/2021"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Import any necessary packages
+
+1)Importing all necessary packages.
+
+2)Read in the data as an .csv file
+
+3)Display the head of the data (first 6 rows) so we can begin to understand what the dataset looks like.
+```{r}
+library(readr)     #For reading csv files
+library(dplyr)     #For data wrangling
+library(lubridate) #For handling dates
+library(ggplot2)   #For plotting of results
+
+#Read in the data
+Online_Retail <- read_csv("D:/MSBA/Fundamentals of Machine Learning/ML Final Project/Online_Retail.csv")
+
+#Convert to dataframe
+Online_Retail = data.frame(Online_Retail)
+#Preview the data
+head(Online_Retail)
+```
+
+
+##Data Wrangling in dplyr
+1)Remove any transactions that aren't associated with a logged-in user (we can't know how many purchases a user has made if they check out as a guest).
+
+2)Ensure that all columns are of the appropriate data type; the invoice date column must be converted to a date type.
+
+3)Transform the data from transactional level (the online retail dataframe) into customer-level (the customerlvl dataframe).
+```{r}
+#How many rows are not linked with a logged-in user?
+sum(is.na(Online_Retail$CustomerID))
+#Answer: 135,080 transactions
+#We will exclude these transactions, as we are only interested in monitoring user behaviour
+Online_Retail <- Online_Retail %>%
+  filter(!is.na(CustomerID))
+
+#Ensure columns are of correct types
+str(Online_Retail)
+#In my offline version of the data (downloaded csv), I had to convert the invoice date column to a date column. Here, it looks like the correct
+#datatypes have been preserved.
+
+#Count number of unique items purchased by each customer
+uniqueitems <- Online_Retail %>%
+  group_by(CustomerID) %>%
+  summarise(unique_items_customer = n_distinct(StockCode))
+
+#Group the data at an invoice level
+invoicelvl <- Online_Retail %>%
+  group_by(CustomerID, InvoiceNo) %>%
+  summarise(unique_items_inv = n(),
+            quantity_purchased = sum(Quantity),
+            total_price = sum(Quantity*UnitPrice),
+            invoice_date = first(InvoiceDate)) %>%
+  arrange(CustomerID,invoice_date)
+
+#Join the two arrays together
+combineddata <- left_join(invoicelvl, uniqueitems, by='CustomerID')
+
+#Group the data at a customer level
+customerlvl <- combineddata %>%
+    group_by(CustomerID) %>%
+    summarise(no_orders = n(),
+              unique_items_purchased = min(unique_items_customer),
+              quantity_items_purchased = sum(quantity_purchased),
+              average_quantity_per_order = mean(quantity_purchased),
+              total_money_spent = sum(total_price),
+              average_spent_per_order = mean(total_price))
+```
+
+We now have all of the data we require to group the 4,372 users into clusters. A overview of the new dataset can be found here:
+
+```{r}
+summary(customerlvl[2:7])
+```
+
+The value of total money spent is substantially larger than the other columns. If we used k-means to the unscaled data right away, total money spent would dominate the other columns, and our customers would be categorized primarily by total money spent. The data must be scaled:
+
+```{r}
+#Scale the Data
+km_data <- scale(customerlvl[2:7])
+summary(km_data)
+```
+##Reducing Dimensionality
+
+In this step the following things would be done:
+1)Check for multicollinearity.
+
+2)Try to find principal components to see if the dimensionality can be reduced.
+
+
+**Checking for multicollinearity**
+```{r}
+#Print correlation matrix
+cor(km_data)
+```
+
+Total_money_spent and quantity_items_purchased are highly co-related and we do not need both these variables in cluster analysis so I choose to remove total_money_spent.
+```{r}
+#Remove the 5th column & scale
+km_data_reduced <- scale(customerlvl[c(2:5,7)])
+summary(km_data_reduced)
+```
+
+**Checking for Principal Components**
+```{r}
+km_data.pca <- prcomp(km_data_reduced, center = T,scale = T)
+#Summary of Principal Components
+summary(km_data.pca)
+#Proportion of variance explained:
+var <- km_data.pca$sdev^2
+pve <- var/sum(var)
+#Scree Plot of Cumulative Variance Explained:
+g <- qplot(x = 1:5, y = cumsum(pve), geom = 'line', xlab="Number of Principal Components", ylab='Proportion of Variance Explained', main="Scree Plot of Proportion of Variance Explained")
+g + scale_x_continuous(breaks = seq(0, 5, by = 1))
+```
+##Applying K-means
+
+**Identify the optimal number of clusters**
+```{r}
+#Remove randomness from iterations by setting a seed
+set.seed(123)
+
+#Determine the maximum number of clusters
+#k_max = 10 means we will test all possible numbers of clusters from 1 to 10 to see which performs the best.
+k_max <- 10
+
+#Calculate the total within sum of squares for each of 1:k_max
+twcss <- sapply(1:k_max, function(k){kmeans(km_data_reduced, k)$tot.withinss})
+#Vizualize the results
+g <- qplot(x = 1:k_max, y = twcss, geom = 'line', xlab="Number of Clusters", ylab='TWCSS', main="Scree Plot of Number of Clusters")
+g + scale_x_continuous(breaks = seq(0, 10, by = 1))
+```
+We're looking for a 'elbow' in the plot where the model's quality no longer improves considerably as the model's complexity grows. There is some ambiguity in this plan because there isn't a defined elbow. This is due to a lack of separation between clusters (see the pairs plot below).
+
+
+I'll use k=5 in this case. When we test our model assumptions later, we'll be able to see if this was a good decision.
+
+**Applying K-means clustering with 5 cluster**
+```{r}
+# k-means clustering
+km <-kmeans(km_data_reduced, centers = 5, nstart=20)
+#Check total within sum of squares with a variety of nstart and iter.max values
+#to ensure algorithm convergence
+km$tot.withinss
+#What are the characteristics of the 5 groups?
+km$centers
+#How many users belong to each group?
+table(km$cluster)
+# plot the dataset with clusters
+par(pty="m")
+pairs(km_data, col = km$cluster, main="K-Means with 5 Clusters", lower.panel=NULL,
+      xaxt="n",yaxt="n", oma=c(0,0,5,0))
+```
+This scale is really hard to interpret - for example, category 2, where the 'number of orders' variable is centred around a negative number. Transforming centers back to original scale for added interpretability.
+
+
+
+**Backtransform onto original scale of variables**
+```{r}
+data.orig = t(apply(km$centers, 1, function(r)r*attr(km_data_reduced,'scaled:scale') + attr(km_data_reduced, 'scaled:center')))
+print(data.orig)
+```
+
+
